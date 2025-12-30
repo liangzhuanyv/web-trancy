@@ -7,6 +7,7 @@ import { SubtitleParser } from './subtitle-parser.js';
 import { Translator } from './translator.js';
 import { Dictionary } from './dictionary.js';
 import { Vocabulary } from './vocabulary.js';
+import { Statistics } from './statistics.js';
 
 class App {
     constructor() {
@@ -15,6 +16,10 @@ class App {
         this.translator = new Translator();
         this.dictionary = new Dictionary();
         this.vocabulary = new Vocabulary();
+        this.statistics = new Statistics();
+
+        // 观看时间追踪
+        this.lastWatchTimeUpdate = 0;
 
         // 字幕数据
         this.subtitles = [];
@@ -53,6 +58,7 @@ class App {
 
             // 学习面板
             learningPanel: document.getElementById('learningPanel'),
+            panelResizer: document.getElementById('panelResizer'),
             subtitleList: document.getElementById('subtitleList'),
             closePanelBtn: document.getElementById('closePanelBtn'),
 
@@ -98,7 +104,24 @@ class App {
 
             // 生词本
             vocabBtn: document.getElementById('vocabBtn'),
-            vocabCount: document.getElementById('vocabCount')
+            vocabCount: document.getElementById('vocabCount'),
+
+            // 完成观看按钮
+            completeBtn: document.getElementById('completeBtn'),
+
+            // 统计弹窗
+            statsBtn: document.getElementById('statsBtn'),
+            statsModal: document.getElementById('statsModal'),
+            closeStatsBtn: document.getElementById('closeStatsBtn'),
+            statTotalVideos: document.getElementById('statTotalVideos'),
+            statTotalTime: document.getElementById('statTotalTime'),
+            statVocabCount: document.getElementById('statVocabCount'),
+            statStreak: document.getElementById('statStreak'),
+            statTodayTime: document.getElementById('statTodayTime'),
+            statWordLookups: document.getElementById('statWordLookups'),
+            statLearningDays: document.getElementById('statLearningDays'),
+            recentVideosList: document.getElementById('recentVideosList'),
+            achievementsList: document.getElementById('achievementsList')
         };
 
         this.init();
@@ -112,6 +135,9 @@ class App {
 
         // 创建 toast 容器
         this.createToastContainer();
+
+        // 启动观看时间追踪（每5秒记录一次）
+        setInterval(() => this.trackWatchTime(), 5000);
     }
 
     bindEvents() {
@@ -256,6 +282,30 @@ class App {
             this.updateVocabCount();
         };
 
+        // 完成观看按钮
+        if (this.elements.completeBtn) {
+            this.elements.completeBtn.addEventListener('click', () => {
+                this.markVideoCompleted();
+            });
+        }
+
+        // 统计弹窗
+        if (this.elements.statsBtn) {
+            this.elements.statsBtn.addEventListener('click', () => {
+                this.openStats();
+            });
+        }
+
+        if (this.elements.closeStatsBtn) {
+            this.elements.closeStatsBtn.addEventListener('click', () => {
+                this.closeStats();
+            });
+
+            this.elements.statsModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+                this.closeStats();
+            });
+        }
+
         // AI 对话
         if (this.elements.closeChatBtn) {
             this.elements.closeChatBtn.addEventListener('click', () => {
@@ -314,6 +364,9 @@ class App {
             e.stopPropagation();
             this.handleFileDrop(e.dataTransfer.files);
         });
+
+        // 初始化面板调整功能
+        this.setupPanelResize();
     }
 
     setupPlayerCallbacks() {
@@ -330,6 +383,11 @@ class App {
         this.player.loadVideo(file);
         this.currentVideoName = file.name;
         this.elements.videoTitle.textContent = file.name;
+
+        // 切换到该视频的生词本
+        this.vocabulary.switchToVideo(file.name);
+        this.updateVocabCount();
+
         this.showToast(`已加载视频: ${file.name}`);
     }
 
@@ -529,6 +587,9 @@ class App {
 
         // 显示弹窗
         this.showDictionary(word, wordElement);
+
+        // 记录查词统计
+        this.statistics.addWordLookup();
 
         // 查询词典
         const result = await this.dictionary.lookup(word, context);
@@ -748,12 +809,68 @@ class App {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
 
-        // 显示/隐藏学习面板
+        // 显示/隐藏学习面板和调整手柄
         if (this.isLearningMode) {
             this.elements.learningPanel.classList.remove('hidden');
+            if (this.elements.panelResizer) {
+                this.elements.panelResizer.classList.remove('hidden');
+            }
         } else {
             this.elements.learningPanel.classList.add('hidden');
+            if (this.elements.panelResizer) {
+                this.elements.panelResizer.classList.add('hidden');
+            }
         }
+    }
+
+    /**
+     * 设置面板调整大小功能
+     */
+    setupPanelResize() {
+        const resizer = this.elements.panelResizer;
+        const panel = this.elements.learningPanel;
+        const videoArea = document.querySelector('.video-area');
+
+        if (!resizer || !panel) return;
+
+        let isResizing = false;
+        let startX, startWidth;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            // 获取当前 panel 宽度
+            const rect = panel.getBoundingClientRect();
+            startWidth = rect.width;
+
+            resizer.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+
+            // 防止选中文本
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            // 计算新宽度 (向左拖动宽度增加)
+            const deltaX = startX - e.clientX;
+            const newWidth = startWidth + deltaX;
+
+            // 限制宽度范围
+            if (newWidth >= 300 && newWidth <= 800) {
+                panel.style.width = `${newWidth}px`;
+                panel.style.flex = `0 0 ${newWidth}px`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('active');
+                document.body.style.cursor = '';
+            }
+        });
     }
 
     /**
@@ -1187,6 +1304,126 @@ class App {
                 toast.remove();
             }, 300);
         }, 3000);
+    }
+
+    /**
+     * 标记视频完成观看
+     */
+    markVideoCompleted() {
+        if (!this.currentVideoName) {
+            this.showToast('请先加载视频', 'error');
+            return;
+        }
+
+        const count = this.statistics.markVideoCompleted(this.currentVideoName);
+        this.showToast(`🎉 已完成观看！累计完成 ${count} 个视频`, 'success');
+
+        // 添加完成动画效果
+        const btn = this.elements.completeBtn;
+        btn.classList.add('completed');
+        setTimeout(() => btn.classList.remove('completed'), 1000);
+    }
+
+    /**
+     * 打开统计弹窗
+     */
+    openStats() {
+        this.elements.statsModal.classList.remove('hidden');
+        this.updateStatsDisplay();
+    }
+
+    /**
+     * 关闭统计弹窗
+     */
+    closeStats() {
+        this.elements.statsModal.classList.add('hidden');
+    }
+
+    /**
+     * 更新统计显示
+     */
+    updateStatsDisplay() {
+        const summary = this.statistics.getSummary();
+
+        // 主要统计
+        this.elements.statTotalVideos.textContent = summary.completedVideos;
+        this.elements.statTotalTime.textContent = Statistics.formatDuration(summary.totalWatchTime);
+        this.elements.statVocabCount.textContent = this.vocabulary.totalCount;
+        this.elements.statStreak.textContent = summary.streak + ' 天';
+
+        // 今日统计
+        this.elements.statTodayTime.textContent = Statistics.formatDuration(summary.todayWatchTime);
+        this.elements.statWordLookups.textContent = summary.wordLookups + ' 次';
+        this.elements.statLearningDays.textContent = summary.learningDays + ' 天';
+
+        // 最近观看
+        this.renderRecentVideos();
+
+        // 成就
+        this.renderAchievements(summary);
+    }
+
+    /**
+     * 渲染最近观看的视频
+     */
+    renderRecentVideos() {
+        const videos = this.statistics.getRecentVideos(5);
+
+        if (videos.length === 0) {
+            this.elements.recentVideosList.innerHTML = '<p class="empty-hint">暂无观看记录</p>';
+            return;
+        }
+
+        const html = videos.map(video => {
+            const completedIcon = video.completed ? '✅' : '▶️';
+            const watchTime = Statistics.formatDuration(video.watchTime);
+            return `
+                <div class="recent-video-item">
+                    <span class="recent-video-icon">${completedIcon}</span>
+                    <div class="recent-video-info">
+                        <div class="recent-video-name">${video.name}</div>
+                        <div class="recent-video-meta">观看 ${watchTime}${video.completedCount > 0 ? ` · 完成 ${video.completedCount} 次` : ''}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        this.elements.recentVideosList.innerHTML = html;
+    }
+
+    /**
+     * 渲染成就
+     */
+    renderAchievements(summary) {
+        const achievements = [
+            { id: 'first_video', icon: '🎬', name: '初次观影', desc: '完成第一个视频', unlocked: summary.completedVideos >= 1 },
+            { id: 'five_videos', icon: '🎥', name: '视频达人', desc: '完成5个视频', unlocked: summary.completedVideos >= 5 },
+            { id: 'first_word', icon: '📝', name: '初学乍练', desc: '添加第一个生词', unlocked: this.vocabulary.totalCount >= 1 },
+            { id: 'ten_words', icon: '📚', name: '词汇收集者', desc: '添加10个生词', unlocked: this.vocabulary.totalCount >= 10 },
+            { id: 'fifty_words', icon: '🏆', name: '词汇大师', desc: '添加50个生词', unlocked: this.vocabulary.totalCount >= 50 },
+            { id: 'streak_3', icon: '🔥', name: '坚持不懈', desc: '连续学习3天', unlocked: summary.streak >= 3 },
+            { id: 'streak_7', icon: '💪', name: '一周坚持', desc: '连续学习7天', unlocked: summary.streak >= 7 },
+            { id: 'one_hour', icon: '⏰', name: '时光飞逝', desc: '累计观看1小时', unlocked: summary.totalWatchTime >= 3600 }
+        ];
+
+        const html = achievements.map(a => `
+            <div class="achievement ${a.unlocked ? 'unlocked' : 'locked'}">
+                <div class="achievement-icon">${a.icon}</div>
+                <div class="achievement-name">${a.name}</div>
+                <div class="achievement-desc">${a.desc}</div>
+            </div>
+        `).join('');
+
+        this.elements.achievementsList.innerHTML = html;
+    }
+
+    /**
+     * 跟踪观看时间（每5秒调用一次）
+     */
+    trackWatchTime() {
+        if (this.currentVideoName && this.player.isPlaying) {
+            this.statistics.addWatchTime(this.currentVideoName, 5);
+        }
     }
 }
 

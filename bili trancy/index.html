@@ -39,6 +39,14 @@
                         </path>
                     </svg>
                 </button>
+                <button class="btn btn-icon" id="statsBtn" title="学习统计">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 3v18h18" />
+                        <path d="M18 17V9" />
+                        <path d="M13 17V5" />
+                        <path d="M8 17v-3" />
+                    </svg>
+                </button>
             </div>
             <div class="toolbar-center">
                 <span class="video-title" id="videoTitle">请加载视频</span>
@@ -151,6 +159,13 @@
                             </svg>
                             <span class="vocab-count" id="vocabCount">0</span>
                         </button>
+                        <button class="ctrl-btn btn-complete" id="completeBtn" title="完成观看">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                <polyline points="22 4 12 14.01 9 11.01" />
+                            </svg>
+                        </button>
                         <button class="ctrl-btn" id="fullscreenBtn" title="全屏">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
@@ -162,6 +177,9 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 调整大小手柄 -->
+            <div class="panel-resizer hidden" id="panelResizer"></div>
 
             <!-- 学习面板 -->
             <aside class="learning-panel hidden" id="learningPanel">
@@ -273,6 +291,85 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-primary" id="saveSettingsBtn">保存设置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 学习统计弹窗 -->
+        <div class="stats-modal hidden" id="statsModal">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content stats-content">
+                <div class="modal-header">
+                    <h2>📊 学习统计</h2>
+                    <button class="btn-close" id="closeStatsBtn">×</button>
+                </div>
+                <div class="modal-body">
+                    <!-- 整体统计 -->
+                    <div class="stats-overview">
+                        <div class="stat-card primary">
+                            <div class="stat-icon">🎬</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="statTotalVideos">0</span>
+                                <span class="stat-label">观看视频</span>
+                            </div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-icon">⏱️</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="statTotalTime">0分钟</span>
+                                <span class="stat-label">累计观看</span>
+                            </div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon">📚</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="statVocabCount">0</span>
+                                <span class="stat-label">已学单词</span>
+                            </div>
+                        </div>
+                        <div class="stat-card info">
+                            <div class="stat-icon">🔥</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="statStreak">0</span>
+                                <span class="stat-label">连续学习</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 今日统计 -->
+                    <section class="stats-section">
+                        <h3>📅 今日学习</h3>
+                        <div class="today-stats">
+                            <div class="today-stat">
+                                <span class="today-label">观看时长</span>
+                                <span class="today-value" id="statTodayTime">0分钟</span>
+                            </div>
+                            <div class="today-stat">
+                                <span class="today-label">查询单词</span>
+                                <span class="today-value" id="statWordLookups">0 次</span>
+                            </div>
+                            <div class="today-stat">
+                                <span class="today-label">学习天数</span>
+                                <span class="today-value" id="statLearningDays">0 天</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 最近观看 -->
+                    <section class="stats-section">
+                        <h3>🎥 最近观看</h3>
+                        <div class="recent-videos" id="recentVideosList">
+                            <p class="empty-hint">暂无观看记录</p>
+                        </div>
+                    </section>
+
+                    <!-- 成就 -->
+                    <section class="stats-section">
+                        <h3>🏆 成就</h3>
+                        <div class="achievements" id="achievementsList">
+                            <!-- 动态生成 -->
+                        </div>
+                    </section>
                 </div>
             </div>
         </div>

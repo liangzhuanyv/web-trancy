@@ -28,6 +28,10 @@ export class Player {
         this.isPlaying = false;
         this.isDragging = false;
 
+        // 当前视频信息（用于续播）
+        this.currentVideoName = '';
+        this.lastSaveTime = 0; // 上次保存进度的时间
+
         // 回调函数
         this.onTimeUpdate = null;
         this.onVideoLoaded = null;
@@ -81,7 +85,13 @@ export class Player {
         const url = URL.createObjectURL(file);
         this.video.src = url;
         this.videoTitle.textContent = file.name;
+        this.currentVideoName = file.name;
         this.placeholder.classList.add('hidden');
+
+        // 恢复播放进度
+        this.video.addEventListener('loadedmetadata', () => {
+            this.restorePlaybackPosition();
+        }, { once: true });
 
         // 自动播放
         this.video.play().catch(() => {
@@ -249,6 +259,13 @@ export class Player {
         // 更新时间显示
         this.timeDisplay.textContent = `${this.formatTime(current)} / ${this.formatTime(duration)}`;
 
+        // 保存播放进度（每5秒保存一次，避免频繁写入）
+        const now = Date.now();
+        if (now - this.lastSaveTime > 5000) {
+            this.savePlaybackPosition();
+            this.lastSaveTime = now;
+        }
+
         // 调用外部回调
         if (this.onTimeUpdate) {
             this.onTimeUpdate(current);
@@ -350,6 +367,77 @@ export class Player {
      */
     get duration() {
         return this.video.duration;
+    }
+
+    /**
+     * 保存播放进度
+     */
+    savePlaybackPosition() {
+        if (!this.currentVideoName || !this.video.duration) return;
+
+        try {
+            // 获取已保存的进度记录
+            const savedPositions = JSON.parse(localStorage.getItem('videoPlaybackPositions') || '{}');
+
+            // 保存当前视频的进度
+            savedPositions[this.currentVideoName] = {
+                currentTime: this.video.currentTime,
+                duration: this.video.duration,
+                timestamp: Date.now()
+            };
+
+            // 只保留最近的20个视频进度记录，避免 localStorage 过大
+            const entries = Object.entries(savedPositions);
+            if (entries.length > 20) {
+                // 按时间排序，删除最旧的
+                entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+                const trimmed = Object.fromEntries(entries.slice(0, 20));
+                localStorage.setItem('videoPlaybackPositions', JSON.stringify(trimmed));
+            } else {
+                localStorage.setItem('videoPlaybackPositions', JSON.stringify(savedPositions));
+            }
+        } catch (error) {
+            console.error('保存播放进度失败:', error);
+        }
+    }
+
+    /**
+     * 恢复播放进度
+     */
+    restorePlaybackPosition() {
+        if (!this.currentVideoName) return;
+
+        try {
+            const savedPositions = JSON.parse(localStorage.getItem('videoPlaybackPositions') || '{}');
+            const position = savedPositions[this.currentVideoName];
+
+            if (position && position.currentTime > 0) {
+                // 如果上次播放进度超过视频总长度的95%，从头开始
+                if (position.currentTime / this.video.duration > 0.95) {
+                    console.log('[Player] 视频已近播完，从头开始');
+                    return;
+                }
+
+                // 恢复到上次的位置
+                this.video.currentTime = position.currentTime;
+                console.log(`[Player] 续播: ${this.formatTime(position.currentTime)}`);
+            }
+        } catch (error) {
+            console.error('恢复播放进度失败:', error);
+        }
+    }
+
+    /**
+     * 清除某个视频的播放进度
+     */
+    clearPlaybackPosition(videoName) {
+        try {
+            const savedPositions = JSON.parse(localStorage.getItem('videoPlaybackPositions') || '{}');
+            delete savedPositions[videoName || this.currentVideoName];
+            localStorage.setItem('videoPlaybackPositions', JSON.stringify(savedPositions));
+        } catch (error) {
+            console.error('清除播放进度失败:', error);
+        }
     }
 }
 
