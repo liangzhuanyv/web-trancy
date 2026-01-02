@@ -31,8 +31,28 @@ export class Dictionary {
 
         // 检查缓存
         const cacheKey = context ? `${cleanWord}:${context.substring(0, 50)}` : cleanWord;
-        if (this.cache[cacheKey]) {
-            return this.cache[cacheKey];
+        const cached = this.cache[cacheKey];
+
+        // 如果缓存存在且已有中文翻译，直接返回
+        if (cached && cached.wordSummaryZh) {
+            console.log('[Dictionary] 使用缓存（含中文翻译）:', cleanWord);
+            return cached;
+        }
+
+        // 如果缓存存在但没有中文翻译，尝试补充翻译
+        if (cached && this.apiKey) {
+            console.log('[Dictionary] 缓存无中文翻译，尝试补充:', cleanWord);
+            const enrichedResult = await this.enrichWithChinese({ ...cached }, context);
+            if (enrichedResult.wordSummaryZh) {
+                this.cache[cacheKey] = enrichedResult;
+                this.saveCache();
+            }
+            return enrichedResult;
+        }
+
+        // 没有 API Key 时也返回缓存
+        if (cached) {
+            return cached;
         }
 
         // 先尝试免费词典
@@ -146,13 +166,18 @@ export class Dictionary {
             if (response.ok) {
                 const data = await response.json();
                 const content = data.choices[0]?.message?.content || '';
+                console.log('[Dictionary] LLM 翻译响应:', content);
 
-                // 解析 JSON
+                // 解析 JSON - 尝试多种方式
                 const jsonMatch = content.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     try {
                         const parsed = JSON.parse(jsonMatch[0]);
-                        result.wordSummaryZh = parsed.wordSummary || '';
+                        console.log('[Dictionary] 解析后的 JSON:', parsed);
+
+                        // 支持多种可能的字段名
+                        result.wordSummaryZh = parsed.wordSummary || parsed.word_summary || parsed.summary || parsed.translation || '';
+                        console.log('[Dictionary] 提取的 wordSummaryZh:', result.wordSummaryZh);
 
                         if (parsed.definitions && Array.isArray(parsed.definitions)) {
                             result.definitions.forEach((def, index) => {
@@ -162,9 +187,13 @@ export class Dictionary {
                             });
                         }
                     } catch (e) {
-                        console.error('解析翻译 JSON 失败:', e);
+                        console.error('[Dictionary] 解析翻译 JSON 失败:', e, '原始内容:', content);
                     }
+                } else {
+                    console.warn('[Dictionary] 无法从响应中提取 JSON:', content);
                 }
+            } else {
+                console.error('[Dictionary] 翻译 API 请求失败:', response.status);
             }
         } catch (error) {
             console.error('中文翻译失败:', error);

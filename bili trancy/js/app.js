@@ -8,6 +8,7 @@ import { Translator } from './translator.js';
 import { Dictionary } from './dictionary.js';
 import { Vocabulary } from './vocabulary.js';
 import { Statistics } from './statistics.js';
+import { DataManager } from './data-manager.js';
 
 class App {
     constructor() {
@@ -17,6 +18,7 @@ class App {
         this.dictionary = new Dictionary();
         this.vocabulary = new Vocabulary();
         this.statistics = new Statistics();
+        this.dataManager = new DataManager();
 
         // 观看时间追踪
         this.lastWatchTimeUpdate = 0;
@@ -238,6 +240,22 @@ class App {
         this.elements.saveSettingsBtn.addEventListener('click', () => {
             this.saveSettings();
         });
+
+        // 数据导出
+        const exportDataBtn = document.getElementById('exportDataBtn');
+        if (exportDataBtn) {
+            exportDataBtn.addEventListener('click', () => {
+                this.exportData();
+            });
+        }
+
+        // 数据导入
+        const importDataBtn = document.getElementById('importDataBtn');
+        if (importDataBtn) {
+            importDataBtn.addEventListener('click', () => {
+                this.importData();
+            });
+        }
 
         // 选择生词本路径
         this.elements.selectVocabPathBtn.addEventListener('click', async () => {
@@ -1423,6 +1441,56 @@ class App {
     trackWatchTime() {
         if (this.currentVideoName && this.player.isPlaying) {
             this.statistics.addWatchTime(this.currentVideoName, 5);
+        }
+    }
+
+    /**
+     * 导出所有数据
+     */
+    exportData() {
+        try {
+            const result = this.dataManager.downloadAsJson();
+            if (result.success) {
+                this.showToast(`数据已导出到 ${result.filename}`, 'success');
+            }
+        } catch (error) {
+            console.error('导出数据失败:', error);
+            this.showToast('导出数据失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 导入数据
+     */
+    async importData() {
+        const confirmImport = window.confirm(
+            '导入数据将覆盖当前所有数据（生词本、学习统计、设置等）。\n\n确定要继续吗？'
+        );
+
+        if (!confirmImport) return;
+
+        try {
+            const result = await this.dataManager.importFromFile();
+
+            if (result.success) {
+                const exportDate = result.exportedAt
+                    ? new Date(result.exportedAt).toLocaleString('zh-CN')
+                    : '未知时间';
+
+                this.showToast(`${result.message}\n备份时间: ${exportDate}`, 'success');
+
+                // 提示刷新页面
+                setTimeout(() => {
+                    if (window.confirm('数据已导入，需要刷新页面以加载新数据。\n\n立即刷新？')) {
+                        window.location.reload();
+                    }
+                }, 500);
+            } else if (result.message !== '已取消') {
+                this.showToast(result.message, 'error');
+            }
+        } catch (error) {
+            console.error('导入数据失败:', error);
+            this.showToast('导入数据失败: ' + error.message, 'error');
         }
     }
 }
