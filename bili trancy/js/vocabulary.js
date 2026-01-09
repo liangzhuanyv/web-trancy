@@ -78,7 +78,7 @@ export class Vocabulary {
      * 添加生词
      */
     async addWord(wordData) {
-        const { word, phonetic, definitions, context, videoTime, videoName } = wordData;
+        const { word, phonetic, definitions, wordSummaryZh, context, videoTime, videoName } = wordData;
 
         // 检查是否已存在于当前视频的生词本中
         if (this.words.find(w => w.word.toLowerCase() === word.toLowerCase())) {
@@ -89,6 +89,7 @@ export class Vocabulary {
             word,
             phonetic: phonetic || '',
             definitions: definitions || [],
+            wordSummaryZh: wordSummaryZh || '',  // 中文翻译
             context: context || '',
             videoTime: videoTime || '',
             videoName: videoName || this.currentVideoName,

@@ -107,6 +107,12 @@ class App {
             // 生词本
             vocabBtn: document.getElementById('vocabBtn'),
             vocabCount: document.getElementById('vocabCount'),
+            vocabModal: document.getElementById('vocabModal'),
+            closeVocabBtn: document.getElementById('closeVocabBtn'),
+            vocabList: document.getElementById('vocabList'),
+            vocabTotalCount: document.getElementById('vocabTotalCount'),
+            downloadVocabBtn: document.getElementById('downloadVocabBtn'),
+            vocabTabs: document.querySelectorAll('.vocab-tab'),
 
             // 完成观看按钮
             completeBtn: document.getElementById('completeBtn'),
@@ -294,6 +300,51 @@ class App {
         this.elements.vocabBtn.addEventListener('click', () => {
             this.showVocabulary();
         });
+
+        // 生词本弹窗事件
+        if (this.elements.vocabModal) {
+            // 关闭按钮
+            if (this.elements.closeVocabBtn) {
+                this.elements.closeVocabBtn.addEventListener('click', () => {
+                    this.closeVocabulary();
+                });
+            }
+
+            // 背景点击关闭
+            this.elements.vocabModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+                this.closeVocabulary();
+            });
+
+            // 下载按钮
+            if (this.elements.downloadVocabBtn) {
+                this.elements.downloadVocabBtn.addEventListener('click', () => {
+                    this.downloadVocabulary();
+                });
+            }
+
+            // 标签切换
+            this.elements.vocabTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabType = tab.dataset.tab;
+                    this.switchVocabTab(tabType);
+                });
+            });
+
+            // 单词列表点击事件（事件委托）
+            if (this.elements.vocabList) {
+                this.elements.vocabList.addEventListener('click', (e) => {
+                    const removeBtn = e.target.closest('.btn-remove-word');
+                    if (removeBtn) {
+                        const word = removeBtn.dataset.word;
+                        const videoName = removeBtn.dataset.video;
+                        this.removeWordFromVocab(word, videoName, removeBtn.closest('.vocab-word-card'));
+                    }
+                });
+            }
+        }
+
+        // 当前生词本视图模式
+        this.vocabViewMode = 'current';
 
         // 生词本更新回调
         this.vocabulary.onUpdate = (count) => {
@@ -779,6 +830,7 @@ class App {
             word: this.currentDictWord,
             phonetic: this.currentDictResult.phonetic,
             definitions: this.currentDictResult.definitions,
+            wordSummaryZh: this.currentDictResult.wordSummaryZh || '',  // 保存中文翻译
             context: this.currentDictContext,
             videoTime: SubtitleParser.formatTime(this.player.currentTime),
             videoName: this.currentVideoName
@@ -801,19 +853,242 @@ class App {
     }
 
     /**
-     * 显示生词本
+     * 显示生词本弹窗
      */
     showVocabulary() {
-        const words = this.vocabulary.getWords();
+        if (!this.elements.vocabModal) return;
+
+        // 默认显示当前视频的生词
+        this.vocabViewMode = 'current';
+        this.updateVocabTabState();
+        this.renderVocabList();
+
+        this.elements.vocabModal.classList.remove('hidden');
+    }
+
+    /**
+     * 关闭生词本弹窗
+     */
+    closeVocabulary() {
+        if (this.elements.vocabModal) {
+            this.elements.vocabModal.classList.add('hidden');
+        }
+    }
+
+    /**
+     * 切换生词本标签
+     */
+    switchVocabTab(tabType) {
+        this.vocabViewMode = tabType;
+        this.updateVocabTabState();
+        this.renderVocabList();
+    }
+
+    /**
+     * 更新标签状态
+     */
+    updateVocabTabState() {
+        this.elements.vocabTabs.forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === this.vocabViewMode);
+        });
+    }
+
+    /**
+     * 渲染生词列表
+     */
+    renderVocabList() {
+        const words = this.vocabViewMode === 'current'
+            ? this.vocabulary.getWords()
+            : this.vocabulary.getAllWords();
+
+        // 更新统计
+        if (this.elements.vocabTotalCount) {
+            this.elements.vocabTotalCount.textContent = words.length;
+        }
 
         if (words.length === 0) {
-            this.showToast('生词本为空');
+            this.elements.vocabList.innerHTML = `
+                <div class="vocab-empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                    </svg>
+                    <p>${this.vocabViewMode === 'current' ? '当前视频暂无生词' : '暂无生词'}</p>
+                    <p class="hint">点击字幕中的单词，查询后加入生词本</p>
+                </div>
+            `;
             return;
         }
 
-        // 下载生词本
-        this.vocabulary.downloadMarkdown();
-        this.showToast('已下载生词本');
+        const html = words.map(entry => {
+            const meaning = entry.definitions && entry.definitions.length > 0
+                ? entry.definitions.map(d => `${d.pos ? `[${d.pos}] ` : ''}${d.definition}`).join('；')
+                : '无释义';
+
+            return `
+                <div class="vocab-word-card" data-word="${entry.word}">
+                    <div class="vocab-word-info">
+                        <div class="vocab-word-header">
+                            <span class="vocab-word-text">${entry.word}</span>
+                            ${entry.wordSummaryZh ? `<span class="vocab-word-zh">${entry.wordSummaryZh}</span>` : ''}
+                            ${entry.phonetic ? `<span class="vocab-word-phonetic">${entry.phonetic}</span>` : ''}
+                        </div>
+                        <div class="vocab-word-meaning">${meaning}</div>
+                        ${entry.context ? `<div class="vocab-word-context">"${entry.context}"</div>` : ''}
+                        <div class="vocab-word-meta">
+                            ${this.vocabViewMode === 'all' && entry.videoName
+                    ? `<span class="vocab-word-video" title="${entry.videoName}">${entry.videoName}</span>`
+                    : ''}
+                            ${entry.videoTime ? `<span class="vocab-word-time">${entry.videoTime}</span>` : ''}
+                        </div>
+                    </div>
+                    <button class="btn-remove-word" data-word="${entry.word}" data-video="${entry.videoName || ''}" title="移除单词">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        this.elements.vocabList.innerHTML = html;
+    }
+
+    /**
+     * 从生词本移除单词
+     */
+    removeWordFromVocab(word, videoName, cardElement) {
+        // 如果是全部视图，需要切换到对应视频再删除
+        if (this.vocabViewMode === 'all' && videoName) {
+            // 临时切换到该视频的生词本
+            const currentVideo = this.vocabulary.currentVideoName;
+            this.vocabulary.switchToVideo(videoName);
+            const removed = this.vocabulary.removeWord(word);
+            // 切回当前视频
+            if (currentVideo) {
+                this.vocabulary.switchToVideo(currentVideo);
+            }
+            if (removed) {
+                this.animateCardRemoval(cardElement);
+            }
+        } else {
+            const removed = this.vocabulary.removeWord(word);
+            if (removed) {
+                this.animateCardRemoval(cardElement);
+            }
+        }
+    }
+
+    /**
+     * 动画移除卡片
+     */
+    animateCardRemoval(cardElement) {
+        if (!cardElement) return;
+
+        cardElement.classList.add('removing');
+        setTimeout(() => {
+            cardElement.remove();
+            // 更新统计
+            const words = this.vocabViewMode === 'current'
+                ? this.vocabulary.getWords()
+                : this.vocabulary.getAllWords();
+            if (this.elements.vocabTotalCount) {
+                this.elements.vocabTotalCount.textContent = words.length;
+            }
+            // 如果列表为空，显示空状态
+            if (words.length === 0) {
+                this.renderVocabList();
+            }
+            this.showToast('已从生词本移除');
+        }, 300);
+    }
+
+    /**
+     * 下载生词本
+     */
+    downloadVocabulary() {
+        const words = this.vocabViewMode === 'current'
+            ? this.vocabulary.getWords()
+            : this.vocabulary.getAllWords();
+
+        if (words.length === 0) {
+            this.showToast('生词本为空，无法下载', 'error');
+            return;
+        }
+
+        if (this.vocabViewMode === 'current') {
+            this.vocabulary.downloadMarkdown();
+        } else {
+            // 下载全部生词
+            this.downloadAllVocabulary();
+        }
+        this.showToast('已下载生词本', 'success');
+    }
+
+    /**
+     * 下载全部生词本
+     */
+    downloadAllVocabulary() {
+        const allWords = this.vocabulary.allVideoWords;
+        let markdown = `# 生词本 - 全部\n\n`;
+        markdown += `> 导出时间: ${new Date().toLocaleString('zh-CN')}\n\n`;
+
+        for (const [videoName, words] of Object.entries(allWords)) {
+            if (words.length === 0) continue;
+
+            markdown += `## 📺 ${videoName}\n\n`;
+
+            // 按日期分组
+            const grouped = {};
+            for (const entry of words) {
+                const date = entry.addedAt
+                    ? new Date(entry.addedAt).toLocaleDateString('zh-CN')
+                    : '未知日期';
+                if (!grouped[date]) {
+                    grouped[date] = [];
+                }
+                grouped[date].push(entry);
+            }
+
+            for (const [date, dateWords] of Object.entries(grouped)) {
+                markdown += `### ${date}\n\n`;
+
+                for (const entry of dateWords) {
+                    markdown += `#### ${entry.word}\n`;
+                    if (entry.phonetic) {
+                        markdown += `- **音标**: ${entry.phonetic}\n`;
+                    }
+                    if (entry.definitions && entry.definitions.length > 0) {
+                        for (const def of entry.definitions) {
+                            if (def.pos) {
+                                markdown += `- **${def.pos}**: ${def.definition}\n`;
+                            } else {
+                                markdown += `- **释义**: ${def.definition}\n`;
+                            }
+                            if (def.example) {
+                                markdown += `  - 例句: *${def.example}*\n`;
+                            }
+                        }
+                    }
+                    if (entry.context) {
+                        markdown += `- **上下文**: ${entry.context}\n`;
+                    }
+                    if (entry.videoTime) {
+                        markdown += `- **时间点**: ${entry.videoTime}\n`;
+                    }
+                    markdown += '\n';
+                }
+            }
+        }
+
+        // 创建下载
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vocabulary-all-${new Date().toISOString().split('T')[0]}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
     }
 
     /**

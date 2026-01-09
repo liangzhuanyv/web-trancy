@@ -402,6 +402,43 @@
             </div>
         </div>
 
+        <!-- 生词本弹窗 -->
+        <div class="vocab-modal hidden" id="vocabModal">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content vocab-content">
+                <div class="modal-header">
+                    <h2>📚 生词本</h2>
+                    <button class="btn-close" id="closeVocabBtn">×</button>
+                </div>
+                <div class="vocab-header-actions">
+                    <div class="vocab-tabs">
+                        <button class="vocab-tab active" data-tab="current">当前视频</button>
+                        <button class="vocab-tab" data-tab="all">全部单词</button>
+                    </div>
+                    <button class="btn btn-download-vocab" id="downloadVocabBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        下载生词本
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="vocab-stats" id="vocabStats">
+                        <span class="vocab-stat-item">
+                            <span class="stat-number" id="vocabTotalCount">0</span>
+                            <span class="stat-desc">个单词</span>
+                        </span>
+                    </div>
+                    <div class="vocab-list" id="vocabList">
+                        <p class="empty-hint">暂无生词</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 词典弹窗（可拖拽） -->
         <div class="dictionary-popup draggable hidden" id="dictionaryPopup">
             <div class="dict-drag-handle" id="dictDragHandle">
