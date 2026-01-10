@@ -1,0 +1,2005 @@
+/**
+ * Bili Trancy - 双语字幕播放器主应用 V2.0
+ */
+
+import { Player } from './player.js';
+import { SubtitleParser } from './subtitle-parser.js';
+import { Translator } from './translator.js';
+import { Dictionary } from './dictionary.js';
+import { Vocabulary } from './vocabulary.js';
+import { Statistics } from './statistics.js';
+import { DataManager } from './data-manager.js';
+
+class App {
+    constructor() {
+        // 模块实例
+        this.player = new Player();
+        this.translator = new Translator();
+        this.dictionary = new Dictionary();
+        this.vocabulary = new Vocabulary();
+        this.statistics = new Statistics();
+        this.dataManager = new DataManager();
+
+        // 观看时间追踪
+        this.lastWatchTimeUpdate = 0;
+
+        // 字幕数据
+        this.subtitles = [];
+        this.currentSubtitleIndex = -1;
+
+        // 模式
+        this.isLearningMode = false;
+        this.subtitlesVisible = true;
+
+        // 当前视频信息
+        this.currentVideoName = '';
+
+        // AI 对话历史
+        this.chatHistory = [];
+        this.chatSessions = []; // 所有对话会话
+        this.currentChatId = null; // 当前对话 ID
+
+        // DOM 元素
+        this.elements = {
+            // 工具栏
+            loadVideoBtn: document.getElementById('loadVideoBtn'),
+            loadSubtitleBtn: document.getElementById('loadSubtitleBtn'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            videoTitle: document.getElementById('videoTitle'),
+            modeButtons: document.querySelectorAll('.mode-btn'),
+
+            // 视频
+            videoInput: document.getElementById('videoInput'),
+            subtitleInput: document.getElementById('subtitleInput'),
+
+            // 字幕
+            subtitleOverlay: document.getElementById('subtitleOverlay'),
+            subtitleOriginal: document.getElementById('subtitleOriginal'),
+            subtitleTranslation: document.getElementById('subtitleTranslation'),
+            subtitleToggleBtn: document.getElementById('subtitleToggleBtn'),
+
+            // 学习面板
+            learningPanel: document.getElementById('learningPanel'),
+            panelResizer: document.getElementById('panelResizer'),
+            subtitleList: document.getElementById('subtitleList'),
+            closePanelBtn: document.getElementById('closePanelBtn'),
+
+            // 面板头部按钮
+            aiChatBtnHeader: document.getElementById('aiChatBtnHeader'),
+            translateBtnHeader: document.getElementById('translateBtnHeader'),
+
+            // 浮动按钮
+            translateBtn: document.getElementById('translateBtn'),
+            aiChatBtn: document.getElementById('aiChatBtn'),
+            moreOptionsBtn: document.getElementById('moreOptionsBtn'),
+
+            // 设置弹窗
+            settingsModal: document.getElementById('settingsModal'),
+            closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+            saveSettingsBtn: document.getElementById('saveSettingsBtn'),
+            apiBaseUrl: document.getElementById('apiBaseUrl'),
+            apiKey: document.getElementById('apiKey'),
+            apiModel: document.getElementById('apiModel'),
+            sourceLang: document.getElementById('sourceLang'),
+            targetLang: document.getElementById('targetLang'),
+            vocabPath: document.getElementById('vocabPath'),
+            selectVocabPathBtn: document.getElementById('selectVocabPathBtn'),
+
+            // 词典弹窗
+            dictionaryPopup: document.getElementById('dictionaryPopup'),
+            dictDragHandle: document.getElementById('dictDragHandle'),
+            closeDictBtn: document.getElementById('closeDictBtn'),
+            dictWord: document.getElementById('dictWord'),
+            dictWordZh: document.getElementById('dictWordZh'),
+            dictPhonetic: document.getElementById('dictPhonetic'),
+            dictContent: document.getElementById('dictContent'),
+            addToVocabBtn: document.getElementById('addToVocabBtn'),
+
+            // AI 对话弹窗
+            chatModal: document.getElementById('chatModal'),
+            closeChatBtn: document.getElementById('closeChatBtn'),
+            chatMessages: document.getElementById('chatMessages'),
+            chatInput: document.getElementById('chatInput'),
+            chatSendBtn: document.getElementById('chatSendBtn'),
+            newChatBtn: document.getElementById('newChatBtn'),
+            chatHistoryList: document.getElementById('chatHistoryList'),
+
+            // 生词本
+            vocabBtn: document.getElementById('vocabBtn'),
+            vocabCount: document.getElementById('vocabCount'),
+            vocabModal: document.getElementById('vocabModal'),
+            closeVocabBtn: document.getElementById('closeVocabBtn'),
+            vocabList: document.getElementById('vocabList'),
+            vocabTotalCount: document.getElementById('vocabTotalCount'),
+            downloadVocabBtn: document.getElementById('downloadVocabBtn'),
+            vocabTabs: document.querySelectorAll('.vocab-tab'),
+
+            // 完成观看按钮
+            completeBtn: document.getElementById('completeBtn'),
+
+            // 统计弹窗
+            statsBtn: document.getElementById('statsBtn'),
+            statsModal: document.getElementById('statsModal'),
+            closeStatsBtn: document.getElementById('closeStatsBtn'),
+            statTotalVideos: document.getElementById('statTotalVideos'),
+            statTotalTime: document.getElementById('statTotalTime'),
+            statVocabCount: document.getElementById('statVocabCount'),
+            statStreak: document.getElementById('statStreak'),
+            statTodayTime: document.getElementById('statTodayTime'),
+            statWordLookups: document.getElementById('statWordLookups'),
+            statLearningDays: document.getElementById('statLearningDays'),
+            recentVideosList: document.getElementById('recentVideosList'),
+            achievementsList: document.getElementById('achievementsList')
+        };
+
+        this.init();
+    }
+
+    init() {
+        this.bindEvents();
+        this.loadSettings();
+        this.setupPlayerCallbacks();
+        this.updateVocabCount();
+
+        // 创建 toast 容器
+        this.createToastContainer();
+
+        // 启动观看时间追踪（每5秒记录一次）
+        setInterval(() => this.trackWatchTime(), 5000);
+    }
+
+    bindEvents() {
+        // 加载视频
+        this.elements.loadVideoBtn.addEventListener('click', () => {
+            this.elements.videoInput.click();
+        });
+
+        this.elements.videoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.loadVideo(file);
+            }
+        });
+
+        // 加载字幕
+        this.elements.loadSubtitleBtn.addEventListener('click', () => {
+            this.elements.subtitleInput.click();
+        });
+
+        this.elements.subtitleInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.loadSubtitle(file);
+            }
+        });
+
+        // 模式切换
+        this.elements.modeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                this.switchMode(mode);
+            });
+        });
+
+        // 字幕显示切换
+        this.elements.subtitleToggleBtn.addEventListener('click', () => {
+            this.toggleSubtitles();
+        });
+
+        // 关闭学习面板
+        this.elements.closePanelBtn.addEventListener('click', () => {
+            this.switchMode('normal');
+        });
+
+        // 浮动按钮
+        if (this.elements.translateBtn) {
+            this.elements.translateBtn.addEventListener('click', () => {
+                this.translateSubtitles();
+            });
+        }
+
+        if (this.elements.aiChatBtn) {
+            this.elements.aiChatBtn.addEventListener('click', () => {
+                console.log('[App] AI Chat floating button clicked');
+                this.openChat();
+            });
+        }
+
+        // 面板头部按钮
+        if (this.elements.aiChatBtnHeader) {
+            console.log('[App] Binding aiChatBtnHeader event');
+            this.elements.aiChatBtnHeader.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[App] AI Chat header button clicked');
+                this.openChat();
+            });
+        } else {
+            console.warn('[App] aiChatBtnHeader not found');
+        }
+
+        if (this.elements.translateBtnHeader) {
+            console.log('[App] Binding translateBtnHeader event');
+            this.elements.translateBtnHeader.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[App] Translate header button clicked');
+                this.translateSubtitles();
+            });
+        } else {
+            console.warn('[App] translateBtnHeader not found');
+        }
+
+        // 设置弹窗
+        this.elements.settingsBtn.addEventListener('click', () => {
+            this.openSettings();
+        });
+
+        this.elements.closeSettingsBtn.addEventListener('click', () => {
+            this.closeSettings();
+        });
+
+        this.elements.settingsModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+            this.closeSettings();
+        });
+
+        this.elements.saveSettingsBtn.addEventListener('click', () => {
+            this.saveSettings();
+        });
+
+        // 数据导出
+        const exportDataBtn = document.getElementById('exportDataBtn');
+        if (exportDataBtn) {
+            exportDataBtn.addEventListener('click', () => {
+                this.exportData();
+            });
+        }
+
+        // 数据导入
+        const importDataBtn = document.getElementById('importDataBtn');
+        if (importDataBtn) {
+            importDataBtn.addEventListener('click', () => {
+                this.importData();
+            });
+        }
+
+        // 选择生词本路径
+        this.elements.selectVocabPathBtn.addEventListener('click', async () => {
+            const path = await this.vocabulary.selectFile();
+            if (path) {
+                this.elements.vocabPath.value = path;
+            }
+        });
+
+        // 词典弹窗关闭
+        document.addEventListener('click', (e) => {
+            if (!this.elements.dictionaryPopup.contains(e.target) &&
+                !e.target.classList.contains('word')) {
+                this.closeDictionary();
+            }
+        });
+
+        // 加入生词本按钮
+        this.elements.addToVocabBtn.addEventListener('click', () => {
+            this.addCurrentWordToVocab();
+        });
+
+        // 关闭词典按钮
+        if (this.elements.closeDictBtn) {
+            this.elements.closeDictBtn.addEventListener('click', () => {
+                this.closeDictionary();
+            });
+        }
+
+        // 词典拖拽功能
+        if (this.elements.dictDragHandle) {
+            this.setupDictDrag();
+        }
+
+        // 生词本按钮
+        this.elements.vocabBtn.addEventListener('click', () => {
+            this.showVocabulary();
+        });
+
+        // 生词本弹窗事件
+        if (this.elements.vocabModal) {
+            // 关闭按钮
+            if (this.elements.closeVocabBtn) {
+                this.elements.closeVocabBtn.addEventListener('click', () => {
+                    this.closeVocabulary();
+                });
+            }
+
+            // 背景点击关闭
+            this.elements.vocabModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+                this.closeVocabulary();
+            });
+
+            // 下载按钮
+            if (this.elements.downloadVocabBtn) {
+                this.elements.downloadVocabBtn.addEventListener('click', () => {
+                    this.downloadVocabulary();
+                });
+            }
+
+            // 标签切换
+            this.elements.vocabTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabType = tab.dataset.tab;
+                    this.switchVocabTab(tabType);
+                });
+            });
+
+            // 单词列表点击事件（事件委托）
+            if (this.elements.vocabList) {
+                this.elements.vocabList.addEventListener('click', (e) => {
+                    // 移除单词按钮
+                    const removeBtn = e.target.closest('.btn-remove-word');
+                    if (removeBtn) {
+                        const word = removeBtn.dataset.word;
+                        const videoName = removeBtn.dataset.video;
+                        this.removeWordFromVocab(word, videoName, removeBtn.closest('.vocab-word-card'));
+                        return;
+                    }
+
+                    // 下载视频分组按钮（列表页）
+                    const downloadBtn = e.target.closest('.btn-download-group');
+                    if (downloadBtn) {
+                        e.stopPropagation();
+                        const videoName = downloadBtn.dataset.video;
+                        this.downloadVideoVocabulary(videoName);
+                        return;
+                    }
+
+                    // 下载按钮（详情页）
+                    const downloadDetailBtn = e.target.closest('.btn-download-detail');
+                    if (downloadDetailBtn) {
+                        const videoName = downloadDetailBtn.dataset.video;
+                        this.downloadVideoVocabulary(videoName);
+                        return;
+                    }
+
+                    // 返回按钮（详情页）
+                    const backBtn = e.target.closest('.btn-back-to-list');
+                    if (backBtn) {
+                        this.selectedVideoForVocab = null;
+                        this.renderVocabList();
+                        return;
+                    }
+
+                    // 点击视频分组（进入详情视图）
+                    const groupHeader = e.target.closest('.vocab-group-header');
+                    if (groupHeader) {
+                        const videoName = groupHeader.dataset.video;
+                        this.selectedVideoForVocab = videoName;
+                        this.renderVocabList();
+                        return;
+                    }
+                });
+            }
+        }
+
+        // 当前生词本视图模式
+        this.vocabViewMode = 'current';
+
+        // 生词本更新回调
+        this.vocabulary.onUpdate = (count) => {
+            this.updateVocabCount();
+        };
+
+        // 完成观看按钮
+        if (this.elements.completeBtn) {
+            this.elements.completeBtn.addEventListener('click', () => {
+                this.markVideoCompleted();
+            });
+        }
+
+        // 统计弹窗
+        if (this.elements.statsBtn) {
+            this.elements.statsBtn.addEventListener('click', () => {
+                this.openStats();
+            });
+        }
+
+        if (this.elements.closeStatsBtn) {
+            this.elements.closeStatsBtn.addEventListener('click', () => {
+                this.closeStats();
+            });
+
+            this.elements.statsModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+                this.closeStats();
+            });
+        }
+
+        // AI 对话
+        if (this.elements.closeChatBtn) {
+            this.elements.closeChatBtn.addEventListener('click', () => {
+                this.closeChat();
+            });
+
+            this.elements.chatModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+                this.closeChat();
+            });
+
+            this.elements.chatSendBtn.addEventListener('click', () => {
+                this.sendChatMessage();
+            });
+
+            this.elements.chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendChatMessage();
+                }
+            });
+
+            // 新建对话
+            if (this.elements.newChatBtn) {
+                this.elements.newChatBtn.addEventListener('click', () => {
+                    this.createNewChat();
+                });
+            }
+
+            // 历史对话列表点击
+            if (this.elements.chatHistoryList) {
+                this.elements.chatHistoryList.addEventListener('click', (e) => {
+                    const item = e.target.closest('.chat-history-item');
+                    if (!item) return;
+
+                    // 删除按钮
+                    if (e.target.closest('.item-delete')) {
+                        e.stopPropagation();
+                        this.deleteChatSession(item.dataset.id);
+                        return;
+                    }
+
+                    // 切换到该对话
+                    this.switchChatSession(item.dataset.id);
+                });
+            }
+        }
+
+        // 拖拽上传
+        document.body.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        document.body.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleFileDrop(e.dataTransfer.files);
+        });
+
+        // 初始化面板调整功能
+        this.setupPanelResize();
+    }
+
+    setupPlayerCallbacks() {
+        // 视频时间更新时同步字幕
+        this.player.onTimeUpdate = (currentTime) => {
+            this.updateCurrentSubtitle(currentTime);
+        };
+    }
+
+    /**
+     * 加载视频
+     */
+    loadVideo(file) {
+        this.player.loadVideo(file);
+        this.currentVideoName = file.name;
+        this.elements.videoTitle.textContent = file.name;
+
+        // 切换到该视频的生词本
+        this.vocabulary.switchToVideo(file.name);
+        this.updateVocabCount();
+
+        this.showToast(`已加载视频: ${file.name}`);
+    }
+
+    /**
+     * 加载字幕
+     */
+    async loadSubtitle(file) {
+        try {
+            const content = await file.text();
+            this.subtitles = SubtitleParser.parse(content, file.name);
+
+            if (this.subtitles.length === 0) {
+                this.showToast('字幕文件为空或格式不正确', 'error');
+                return;
+            }
+
+            // 检查是否需要翻译
+            const needsTranslation = this.subtitles.some(s => !s.translation);
+
+            this.showToast(`已加载 ${this.subtitles.length} 条字幕`, 'success');
+
+            // 渲染学习面板
+            this.renderSubtitleList();
+
+            // 如果需要翻译，询问用户
+            if (needsTranslation && this.translator.apiKey) {
+                this.showTranslatePrompt();
+            }
+        } catch (error) {
+            console.error('字幕加载失败:', error);
+            this.showToast('字幕加载失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 显示翻译提示
+     */
+    showTranslatePrompt() {
+        const confirm = window.confirm('检测到字幕缺少翻译，是否使用 AI 翻译？');
+        if (confirm) {
+            this.translateSubtitles();
+        }
+    }
+
+    /**
+     * 翻译字幕
+     */
+    async translateSubtitles() {
+        if (!this.translator.apiKey) {
+            this.showToast('请先在设置中配置 API Key', 'error');
+            return;
+        }
+
+        try {
+            this.showToast('正在翻译字幕...');
+
+            this.subtitles = await this.translator.translateBatchOptimized(
+                this.subtitles,
+                (current, total) => {
+                    console.log(`翻译进度: ${current}/${total}`);
+                }
+            );
+
+            this.showToast('字幕翻译完成！', 'success');
+            this.renderSubtitleList();
+        } catch (error) {
+            console.error('翻译失败:', error);
+            this.showToast('翻译失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 更新当前字幕
+     */
+    updateCurrentSubtitle(currentTime) {
+        // 查找当前时间对应的字幕
+        let newIndex = -1;
+
+        for (let i = 0; i < this.subtitles.length; i++) {
+            const sub = this.subtitles[i];
+            if (currentTime >= sub.start && currentTime <= sub.end) {
+                newIndex = i;
+                break;
+            }
+        }
+
+        // 如果字幕变化了，更新显示
+        if (newIndex !== this.currentSubtitleIndex) {
+            this.currentSubtitleIndex = newIndex;
+
+            if (newIndex >= 0) {
+                const sub = this.subtitles[newIndex];
+                this.elements.subtitleOriginal.textContent = sub.text;
+                this.elements.subtitleTranslation.textContent = sub.translation || '';
+
+                // 更新学习面板中的高亮
+                this.highlightSubtitleItem(newIndex);
+            } else {
+                this.elements.subtitleOriginal.textContent = '';
+                this.elements.subtitleTranslation.textContent = '';
+            }
+        }
+    }
+
+    /**
+     * 渲染字幕列表（歌词风格）
+     */
+    renderSubtitleList() {
+        if (this.subtitles.length === 0) {
+            this.elements.subtitleList.innerHTML = `
+                <div class="empty-state">
+                    <p>加载字幕后将在此显示</p>
+                </div>
+            `;
+            return;
+        }
+
+        const html = this.subtitles.map((sub, index) => {
+            const time = SubtitleParser.formatTime(sub.start);
+            const words = this.tokenizeText(sub.text);
+
+            return `
+                <div class="subtitle-item" data-index="${index}" data-time="${sub.start}">
+                    <div class="time">${time}</div>
+                    <div class="original-text">${words}</div>
+                    <div class="translation-text">${sub.translation || ''}</div>
+                </div>
+            `;
+        }).join('');
+
+        this.elements.subtitleList.innerHTML = html;
+
+        // 绑定点击事件
+        this.elements.subtitleList.querySelectorAll('.subtitle-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                // 如果点击的是单词，不跳转
+                if (e.target.classList.contains('word')) return;
+
+                const time = parseFloat(item.dataset.time);
+                this.player.seekTo(time);
+            });
+        });
+
+        // 绑定单词点击事件
+        this.elements.subtitleList.querySelectorAll('.word').forEach(word => {
+            word.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.lookupWord(word);
+            });
+        });
+    }
+
+    /**
+     * 将文本分割成可点击的单词
+     */
+    tokenizeText(text) {
+        // 保留标点符号，只把单词变成可点击的
+        return text.replace(/([a-zA-Z]+(?:'[a-zA-Z]+)?)/g, '<span class="word">$1</span>');
+    }
+
+    /**
+     * 高亮当前字幕项（歌词效果）
+     */
+    highlightSubtitleItem(index) {
+        // 移除之前的高亮和临近效果
+        this.elements.subtitleList.querySelectorAll('.subtitle-item').forEach((el, i) => {
+            el.classList.remove('active', 'near-active');
+
+            // 添加临近效果
+            if (Math.abs(i - index) === 1) {
+                el.classList.add('near-active');
+            }
+        });
+
+        // 添加新高亮
+        const item = this.elements.subtitleList.querySelector(`[data-index="${index}"]`);
+        if (item) {
+            item.classList.add('active');
+
+            // 滚动到可见区域（居中）
+            item.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        }
+    }
+
+    /**
+     * 查询单词
+     */
+    async lookupWord(wordElement) {
+        const word = wordElement.textContent.trim();
+
+        // 获取上下文
+        const subtitleItem = wordElement.closest('.subtitle-item');
+        const context = subtitleItem?.querySelector('.original-text')?.textContent || '';
+
+        // 显示弹窗
+        this.showDictionary(word, wordElement);
+
+        // 记录查词统计
+        this.statistics.addWordLookup();
+
+        // 查询词典
+        const result = await this.dictionary.lookup(word, context);
+
+        if (result) {
+            this.displayDictionaryResult(result, context);
+        }
+    }
+
+    /**
+     * 显示词典弹窗
+     */
+    showDictionary(word, targetElement) {
+        const popup = this.elements.dictionaryPopup;
+
+        // 显示加载状态
+        this.elements.dictWord.textContent = word;
+        this.elements.dictWordZh.textContent = ''; // 清空之前的翻译
+        this.elements.dictPhonetic.textContent = '';
+        this.elements.dictContent.innerHTML = '<div class="loading-spinner"></div>';
+
+        // 检查是否已在生词本
+        if (this.vocabulary.hasWord(word)) {
+            this.elements.addToVocabBtn.classList.add('added');
+            this.elements.addToVocabBtn.innerHTML = '✓';
+        } else {
+            this.elements.addToVocabBtn.classList.remove('added');
+            this.elements.addToVocabBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+            `;
+        }
+
+        // 定位弹窗
+        const rect = targetElement.getBoundingClientRect();
+        popup.style.left = `${rect.left}px`;
+        popup.style.top = `${rect.bottom + 8}px`;
+
+        // 检查是否超出屏幕
+        popup.classList.remove('hidden');
+        const popupRect = popup.getBoundingClientRect();
+
+        if (popupRect.right > window.innerWidth) {
+            popup.style.left = `${window.innerWidth - popupRect.width - 16}px`;
+        }
+
+        if (popupRect.bottom > window.innerHeight) {
+            popup.style.top = `${rect.top - popupRect.height - 8}px`;
+        }
+
+        // 保存当前单词和上下文
+        this.currentDictWord = word;
+        const subtitleItem = targetElement.closest('.subtitle-item');
+        this.currentDictContext = subtitleItem?.querySelector('.original-text')?.textContent || '';
+    }
+
+    /**
+     * 显示词典结果（含中文）
+     */
+    displayDictionaryResult(result, context) {
+        // 显示简短中文翻译
+        if (result.wordSummaryZh) {
+            this.elements.dictWordZh.textContent = result.wordSummaryZh;
+        } else {
+            this.elements.dictWordZh.textContent = '';
+        }
+
+        this.elements.dictPhonetic.textContent = result.phonetic || '';
+
+        let html = '';
+
+        if (result.definitions && result.definitions.length > 0) {
+            for (const def of result.definitions) {
+                html += '<div class="dict-definition">';
+
+                if (def.pos) {
+                    html += `<span class="dict-pos">${def.pos}</span>`;
+                }
+
+                html += `<p class="dict-meaning">${def.definition}</p>`;
+
+                // 中文释义
+                if (def.definitionZh) {
+                    html += `<p class="dict-meaning-zh">${def.definitionZh}</p>`;
+                }
+
+                if (def.example) {
+                    html += `<p class="dict-example">${def.example}</p>`;
+                }
+
+                html += '</div>';
+            }
+        } else {
+            html = '<p class="dict-meaning">未找到释义</p>';
+        }
+
+        this.elements.dictContent.innerHTML = html;
+
+        // 保存当前结果
+        this.currentDictResult = result;
+    }
+
+    /**
+     * 关闭词典弹窗
+     */
+    closeDictionary() {
+        this.elements.dictionaryPopup.classList.add('hidden');
+    }
+
+    /**
+     * 设置词典拖拽功能
+     */
+    setupDictDrag() {
+        const popup = this.elements.dictionaryPopup;
+        const handle = this.elements.dictDragHandle;
+
+        let isDragging = false;
+        let startX, startY, startLeft, startTop;
+
+        handle.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.btn-close-small')) return; // 忽略关闭按钮
+
+            isDragging = true;
+            popup.classList.add('dragging');
+
+            const rect = popup.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = rect.left;
+            startTop = rect.top;
+
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+
+            let newLeft = startLeft + deltaX;
+            let newTop = startTop + deltaY;
+
+            // 限制在屏幕内
+            const popupRect = popup.getBoundingClientRect();
+            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - popupRect.width));
+            newTop = Math.max(0, Math.min(newTop, window.innerHeight - popupRect.height));
+
+            popup.style.left = `${newLeft}px`;
+            popup.style.top = `${newTop}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                popup.classList.remove('dragging');
+            }
+        });
+    }
+
+    /**
+     * 加入生词本
+     */
+    async addCurrentWordToVocab() {
+        if (!this.currentDictWord || !this.currentDictResult) return;
+
+        const result = await this.vocabulary.addWord({
+            word: this.currentDictWord,
+            phonetic: this.currentDictResult.phonetic,
+            definitions: this.currentDictResult.definitions,
+            wordSummaryZh: this.currentDictResult.wordSummaryZh || '',  // 保存中文翻译
+            context: this.currentDictContext,
+            videoTime: SubtitleParser.formatTime(this.player.currentTime),
+            videoName: this.currentVideoName
+        });
+
+        if (result.success) {
+            this.elements.addToVocabBtn.classList.add('added');
+            this.elements.addToVocabBtn.innerHTML = '✓';
+            this.showToast(result.message, 'success');
+        } else {
+            this.showToast(result.message, 'error');
+        }
+    }
+
+    /**
+     * 更新生词数量显示
+     */
+    updateVocabCount() {
+        this.elements.vocabCount.textContent = this.vocabulary.count;
+    }
+
+    /**
+     * 显示生词本弹窗
+     */
+    showVocabulary() {
+        if (!this.elements.vocabModal) return;
+
+        // 默认显示当前视频的生词
+        this.vocabViewMode = 'current';
+        this.updateVocabTabState();
+        this.renderVocabList();
+
+        this.elements.vocabModal.classList.remove('hidden');
+    }
+
+    /**
+     * 关闭生词本弹窗
+     */
+    closeVocabulary() {
+        if (this.elements.vocabModal) {
+            this.elements.vocabModal.classList.add('hidden');
+        }
+    }
+
+    /**
+     * 切换生词本标签
+     */
+    switchVocabTab(tabType) {
+        this.vocabViewMode = tabType;
+        this.selectedVideoForVocab = null; // 重置选中的视频
+        this.updateVocabTabState();
+        this.renderVocabList();
+    }
+
+    /**
+     * 更新标签状态
+     */
+    updateVocabTabState() {
+        this.elements.vocabTabs.forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === this.vocabViewMode);
+        });
+    }
+
+    /**
+     * 渲染生词列表
+     */
+    renderVocabList() {
+        // 当前视频模式：直接显示单词列表
+        if (this.vocabViewMode === 'current') {
+            const words = this.vocabulary.getWords();
+
+            // 更新统计
+            if (this.elements.vocabTotalCount) {
+                this.elements.vocabTotalCount.textContent = words.length;
+            }
+
+            if (words.length === 0) {
+                this.elements.vocabList.innerHTML = `
+                    <div class="vocab-empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                        </svg>
+                        <p>当前视频暂无生词</p>
+                        <p class="hint">点击字幕中的单词，查询后加入生词本</p>
+                    </div>
+                `;
+                return;
+            }
+
+            this.elements.vocabList.innerHTML = this.renderWordCards(words, false);
+            return;
+        }
+
+        // 全部单词模式
+        // 如果选中了某个视频，显示该视频的单词详情
+        if (this.selectedVideoForVocab) {
+            this.renderVideoVocabDetail(this.selectedVideoForVocab);
+            return;
+        }
+
+        // 否则显示视频分组列表
+        const groups = this.vocabulary.getWordsGroupedByVideo();
+        const totalWords = groups.reduce((sum, g) => sum + g.wordCount, 0);
+
+        // 更新统计
+        if (this.elements.vocabTotalCount) {
+            this.elements.vocabTotalCount.textContent = totalWords;
+        }
+
+        if (groups.length === 0) {
+            this.elements.vocabList.innerHTML = `
+                <div class="vocab-empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                    </svg>
+                    <p>暂无生词</p>
+                    <p class="hint">点击字幕中的单词，查询后加入生词本</p>
+                </div>
+            `;
+            return;
+        }
+
+        const html = groups.map(group => {
+            const safeVideoName = group.videoName.replace(/"/g, '&quot;');
+
+            return `
+                <div class="vocab-video-group" data-video="${safeVideoName}">
+                    <div class="vocab-group-header" data-video="${safeVideoName}">
+                        <div class="vocab-group-info">
+                            <span class="vocab-group-icon">🎬</span>
+                            <span class="vocab-group-name" title="${safeVideoName}">${group.videoName}</span>
+                        </div>
+                        <div class="vocab-group-actions">
+                            <span class="vocab-group-count">${group.wordCount} 个单词</span>
+                            <button class="btn-download-group" data-video="${safeVideoName}" title="下载此视频的生词">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                            </button>
+                            <span class="vocab-group-arrow">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        this.elements.vocabList.innerHTML = html;
+    }
+
+    /**
+     * 渲染某个视频的单词详情
+     */
+    renderVideoVocabDetail(videoName) {
+        const groups = this.vocabulary.getWordsGroupedByVideo();
+        const group = groups.find(g => g.videoName === videoName);
+
+        if (!group) {
+            this.selectedVideoForVocab = null;
+            this.renderVocabList();
+            return;
+        }
+
+        // 更新统计
+        if (this.elements.vocabTotalCount) {
+            this.elements.vocabTotalCount.textContent = group.wordCount;
+        }
+
+        const safeVideoName = videoName.replace(/"/g, '&quot;');
+
+        const html = `
+            <div class="vocab-detail-view">
+                <div class="vocab-detail-header">
+                    <button class="btn-back-to-list" title="返回列表">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        返回
+                    </button>
+                    <div class="vocab-detail-title">
+                        <span class="vocab-detail-icon">🎬</span>
+                        <span class="vocab-detail-name" title="${safeVideoName}">${videoName}</span>
+                    </div>
+                    <button class="btn-download-detail" data-video="${safeVideoName}" title="下载此视频的生词">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="vocab-detail-words">
+                    ${this.renderWordCards(group.words, true)}
+                </div>
+            </div>
+        `;
+
+        this.elements.vocabList.innerHTML = html;
+    }
+
+    /**
+     * 渲染单词卡片
+     */
+    renderWordCards(words, showVideoName = false) {
+        return words.map(entry => {
+            const meaning = entry.definitions && entry.definitions.length > 0
+                ? entry.definitions.map(d => `${d.pos ? `[${d.pos}] ` : ''}${d.definition}`).join('；')
+                : '无释义';
+
+            return `
+                <div class="vocab-word-card" data-word="${entry.word}">
+                    <div class="vocab-word-info">
+                        <div class="vocab-word-header">
+                            <span class="vocab-word-text">${entry.word}</span>
+                            ${entry.wordSummaryZh ? `<span class="vocab-word-zh">${entry.wordSummaryZh}</span>` : ''}
+                            ${entry.phonetic ? `<span class="vocab-word-phonetic">${entry.phonetic}</span>` : ''}
+                        </div>
+                        <div class="vocab-word-meaning">${meaning}</div>
+                        ${entry.context ? `<div class="vocab-word-context">"${entry.context}"</div>` : ''}
+                        <div class="vocab-word-meta">
+                            ${entry.videoTime ? `<span class="vocab-word-time">${entry.videoTime}</span>` : ''}
+                        </div>
+                    </div>
+                    <button class="btn-remove-word" data-word="${entry.word}" data-video="${entry.videoName || ''}" title="移除单词">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * 切换视频分组展开/收起
+     */
+    toggleVocabGroup(videoName) {
+        if (!this.vocabExpandedGroups) {
+            this.vocabExpandedGroups = new Set();
+        }
+
+        const groupEl = this.elements.vocabList.querySelector(`.vocab-video-group[data-video="${videoName.replace(/"/g, '\\"')}"]`);
+        if (!groupEl) return;
+
+        const isExpanded = this.vocabExpandedGroups.has(videoName);
+        const contentEl = groupEl.querySelector('.vocab-group-content');
+
+        if (isExpanded) {
+            // 收起
+            this.vocabExpandedGroups.delete(videoName);
+            groupEl.classList.remove('expanded');
+            contentEl.innerHTML = '';
+        } else {
+            // 展开
+            this.vocabExpandedGroups.add(videoName);
+            groupEl.classList.add('expanded');
+
+            // 获取该视频的单词
+            const groups = this.vocabulary.getWordsGroupedByVideo();
+            const group = groups.find(g => g.videoName === videoName);
+            if (group) {
+                contentEl.innerHTML = this.renderWordCards(group.words, true);
+            }
+        }
+    }
+
+    /**
+     * 下载指定视频的生词
+     */
+    downloadVideoVocabulary(videoName) {
+        const success = this.vocabulary.downloadVideoMarkdown(videoName);
+        if (success) {
+            this.showToast(`已下载 "${videoName}" 的生词本`, 'success');
+        } else {
+            this.showToast('下载失败，该视频暂无生词', 'error');
+        }
+    }
+
+    /**
+     * 从生词本移除单词
+     */
+    removeWordFromVocab(word, videoName, cardElement) {
+        // 如果是全部视图，需要切换到对应视频再删除
+        if (this.vocabViewMode === 'all' && videoName) {
+            // 临时切换到该视频的生词本
+            const currentVideo = this.vocabulary.currentVideoName;
+            this.vocabulary.switchToVideo(videoName);
+            const removed = this.vocabulary.removeWord(word);
+            // 切回当前视频
+            if (currentVideo) {
+                this.vocabulary.switchToVideo(currentVideo);
+            }
+            if (removed) {
+                this.animateCardRemoval(cardElement);
+            }
+        } else {
+            const removed = this.vocabulary.removeWord(word);
+            if (removed) {
+                this.animateCardRemoval(cardElement);
+            }
+        }
+    }
+
+    /**
+     * 动画移除卡片
+     */
+    animateCardRemoval(cardElement) {
+        if (!cardElement) return;
+
+        cardElement.classList.add('removing');
+        setTimeout(() => {
+            // 获取所属分组（如果在分组视图中）
+            const groupElement = cardElement.closest('.vocab-video-group');
+
+            cardElement.remove();
+
+            // 更新分组计数（如果在分组视图中）
+            if (groupElement && this.vocabViewMode === 'all') {
+                const contentEl = groupElement.querySelector('.vocab-group-content');
+                const remainingCards = contentEl.querySelectorAll('.vocab-word-card').length;
+
+                if (remainingCards === 0) {
+                    // 分组为空，移除整个分组
+                    groupElement.classList.add('removing');
+                    setTimeout(() => {
+                        groupElement.remove();
+                        // 检查是否还有分组
+                        const remainingGroups = this.elements.vocabList.querySelectorAll('.vocab-video-group').length;
+                        if (remainingGroups === 0) {
+                            this.renderVocabList();
+                        }
+                    }, 300);
+                } else {
+                    // 更新分组计数
+                    const countEl = groupElement.querySelector('.vocab-group-count');
+                    if (countEl) {
+                        countEl.textContent = `${remainingCards} 个单词`;
+                    }
+                }
+            }
+
+            // 更新总计数
+            const totalWords = this.vocabViewMode === 'current'
+                ? this.vocabulary.getWords().length
+                : this.vocabulary.getAllWords().length;
+            if (this.elements.vocabTotalCount) {
+                this.elements.vocabTotalCount.textContent = totalWords;
+            }
+
+            // 如果列表为空且不是分组模式，显示空状态
+            if (totalWords === 0 && this.vocabViewMode === 'current') {
+                this.renderVocabList();
+            }
+
+            this.showToast('已从生词本移除');
+        }, 300);
+    }
+
+    /**
+     * 下载生词本
+     */
+    downloadVocabulary() {
+        const words = this.vocabViewMode === 'current'
+            ? this.vocabulary.getWords()
+            : this.vocabulary.getAllWords();
+
+        if (words.length === 0) {
+            this.showToast('生词本为空，无法下载', 'error');
+            return;
+        }
+
+        if (this.vocabViewMode === 'current') {
+            this.vocabulary.downloadMarkdown();
+        } else {
+            // 下载全部生词
+            this.downloadAllVocabulary();
+        }
+        this.showToast('已下载生词本', 'success');
+    }
+
+    /**
+     * 下载全部生词本
+     */
+    downloadAllVocabulary() {
+        const allWords = this.vocabulary.allVideoWords;
+        let markdown = `# 生词本 - 全部\n\n`;
+        markdown += `> 导出时间: ${new Date().toLocaleString('zh-CN')}\n\n`;
+
+        for (const [videoName, words] of Object.entries(allWords)) {
+            if (words.length === 0) continue;
+
+            markdown += `## 📺 ${videoName}\n\n`;
+
+            // 按日期分组
+            const grouped = {};
+            for (const entry of words) {
+                const date = entry.addedAt
+                    ? new Date(entry.addedAt).toLocaleDateString('zh-CN')
+                    : '未知日期';
+                if (!grouped[date]) {
+                    grouped[date] = [];
+                }
+                grouped[date].push(entry);
+            }
+
+            for (const [date, dateWords] of Object.entries(grouped)) {
+                markdown += `### ${date}\n\n`;
+
+                for (const entry of dateWords) {
+                    markdown += `#### ${entry.word}\n`;
+                    if (entry.phonetic) {
+                        markdown += `- **音标**: ${entry.phonetic}\n`;
+                    }
+                    if (entry.definitions && entry.definitions.length > 0) {
+                        for (const def of entry.definitions) {
+                            if (def.pos) {
+                                markdown += `- **${def.pos}**: ${def.definition}\n`;
+                            } else {
+                                markdown += `- **释义**: ${def.definition}\n`;
+                            }
+                            if (def.example) {
+                                markdown += `  - 例句: *${def.example}*\n`;
+                            }
+                        }
+                    }
+                    if (entry.context) {
+                        markdown += `- **上下文**: ${entry.context}\n`;
+                    }
+                    if (entry.videoTime) {
+                        markdown += `- **时间点**: ${entry.videoTime}\n`;
+                    }
+                    markdown += '\n';
+                }
+            }
+        }
+
+        // 创建下载
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vocabulary-all-${new Date().toISOString().split('T')[0]}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    /**
+     * 切换模式
+     */
+    switchMode(mode) {
+        this.isLearningMode = mode === 'learning';
+
+        // 更新按钮状态
+        this.elements.modeButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+
+        // 显示/隐藏学习面板和调整手柄
+        if (this.isLearningMode) {
+            this.elements.learningPanel.classList.remove('hidden');
+            if (this.elements.panelResizer) {
+                this.elements.panelResizer.classList.remove('hidden');
+            }
+        } else {
+            this.elements.learningPanel.classList.add('hidden');
+            if (this.elements.panelResizer) {
+                this.elements.panelResizer.classList.add('hidden');
+            }
+        }
+    }
+
+    /**
+     * 设置面板调整大小功能
+     */
+    setupPanelResize() {
+        const resizer = this.elements.panelResizer;
+        const panel = this.elements.learningPanel;
+        const videoArea = document.querySelector('.video-area');
+
+        if (!resizer || !panel) return;
+
+        let isResizing = false;
+        let startX, startWidth;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            // 获取当前 panel 宽度
+            const rect = panel.getBoundingClientRect();
+            startWidth = rect.width;
+
+            resizer.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+
+            // 防止选中文本
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            // 计算新宽度 (向左拖动宽度增加)
+            const deltaX = startX - e.clientX;
+            const newWidth = startWidth + deltaX;
+
+            // 限制宽度范围
+            if (newWidth >= 300 && newWidth <= 800) {
+                panel.style.width = `${newWidth}px`;
+                panel.style.flex = `0 0 ${newWidth}px`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('active');
+                document.body.style.cursor = '';
+            }
+        });
+    }
+
+    /**
+     * 切换字幕显示
+     */
+    toggleSubtitles() {
+        this.subtitlesVisible = !this.subtitlesVisible;
+
+        if (this.subtitlesVisible) {
+            this.elements.subtitleOverlay.classList.remove('hidden');
+        } else {
+            this.elements.subtitleOverlay.classList.add('hidden');
+        }
+    }
+
+    /**
+     * 打开设置
+     */
+    openSettings() {
+        // 加载当前设置
+        this.elements.apiBaseUrl.value = localStorage.getItem('apiBaseUrl') || 'https://api.openai.com/v1';
+        this.elements.apiKey.value = localStorage.getItem('apiKey') || '';
+        this.elements.apiModel.value = localStorage.getItem('apiModel') || 'gpt-4o-mini';
+        this.elements.sourceLang.value = localStorage.getItem('sourceLang') || 'en';
+        this.elements.targetLang.value = localStorage.getItem('targetLang') || 'zh';
+        this.elements.vocabPath.value = localStorage.getItem('vocabPath') || '';
+
+        this.elements.settingsModal.classList.remove('hidden');
+    }
+
+    /**
+     * 关闭设置
+     */
+    closeSettings() {
+        this.elements.settingsModal.classList.add('hidden');
+    }
+
+    /**
+     * 保存设置
+     */
+    saveSettings() {
+        const settings = {
+            baseUrl: this.elements.apiBaseUrl.value,
+            apiKey: this.elements.apiKey.value,
+            model: this.elements.apiModel.value,
+            sourceLang: this.elements.sourceLang.value,
+            targetLang: this.elements.targetLang.value
+        };
+
+        // 保存到 localStorage
+        localStorage.setItem('apiBaseUrl', settings.baseUrl);
+        localStorage.setItem('apiKey', settings.apiKey);
+        localStorage.setItem('apiModel', settings.model);
+        localStorage.setItem('sourceLang', settings.sourceLang);
+        localStorage.setItem('targetLang', settings.targetLang);
+
+        // 更新模块设置
+        this.translator.updateSettings(settings);
+        this.dictionary.updateSettings(settings);
+
+        this.closeSettings();
+        this.showToast('设置已保存', 'success');
+    }
+
+    /**
+     * 加载设置
+     */
+    loadSettings() {
+        const settings = {
+            baseUrl: localStorage.getItem('apiBaseUrl') || 'https://api.openai.com/v1',
+            apiKey: localStorage.getItem('apiKey') || '',
+            model: localStorage.getItem('apiModel') || 'gpt-4o-mini',
+            sourceLang: localStorage.getItem('sourceLang') || 'en',
+            targetLang: localStorage.getItem('targetLang') || 'zh'
+        };
+
+        this.translator.updateSettings(settings);
+        this.dictionary.updateSettings(settings);
+    }
+
+    /**
+     * 打开 AI 对话
+     */
+    openChat() {
+        console.log('[App] openChat called');
+        if (this.elements.chatModal) {
+            // 加载保存的对话会话
+            this.loadChatSessions();
+
+            // 渲染历史列表
+            this.renderChatHistoryList();
+
+            // 如果有上次的对话，恢复它；否则创建新对话
+            if (this.chatSessions.length > 0 && !this.currentChatId) {
+                this.switchChatSession(this.chatSessions[0].id);
+            } else if (!this.currentChatId) {
+                this.createNewChat();
+            }
+
+            this.elements.chatModal.classList.remove('hidden');
+            if (this.elements.chatInput) {
+                this.elements.chatInput.focus();
+            }
+        } else {
+            console.error('[App] chatModal element not found');
+        }
+    }
+
+    /**
+     * 关闭 AI 对话
+     */
+    closeChat() {
+        // 保存当前对话
+        this.saveCurrentChatSession();
+        this.elements.chatModal.classList.add('hidden');
+    }
+
+    /**
+     * 创建新对话
+     */
+    createNewChat() {
+        // 保存当前对话
+        if (this.currentChatId && this.chatHistory.length > 0) {
+            this.saveCurrentChatSession();
+        }
+
+        // 创建新会话
+        const newId = Date.now().toString();
+        const newSession = {
+            id: newId,
+            title: '新对话',
+            messages: [],
+            createdAt: new Date().toISOString()
+        };
+
+        this.chatSessions.unshift(newSession);
+        this.currentChatId = newId;
+        this.chatHistory = [];
+
+        // 清空消息区域
+        this.elements.chatMessages.innerHTML = `
+            <div class="chat-message assistant">
+                你好！我是你的英语学习助手。你可以问我关于视频内容、单词用法、语法问题等任何问题。
+            </div>
+        `;
+
+        // 保存并刷新列表
+        this.saveChatSessions();
+        this.renderChatHistoryList();
+    }
+
+    /**
+     * 切换到指定对话
+     */
+    switchChatSession(sessionId) {
+        // 保存当前对话
+        if (this.currentChatId && this.chatHistory.length > 0) {
+            this.saveCurrentChatSession();
+        }
+
+        // 查找目标会话
+        const session = this.chatSessions.find(s => s.id === sessionId);
+        if (!session) return;
+
+        this.currentChatId = sessionId;
+        this.chatHistory = session.messages.map(m => ({ role: m.role, content: m.content }));
+
+        // 渲染消息
+        this.elements.chatMessages.innerHTML = '';
+
+        // 添加欢迎消息
+        this.addChatMessage('assistant', '你好！我是你的英语学习助手。你可以问我关于视频内容、单词用法、语法问题等任何问题。');
+
+        // 添加历史消息
+        for (const msg of session.messages) {
+            this.addChatMessage(msg.role, msg.content);
+        }
+
+        // 更新列表高亮
+        this.renderChatHistoryList();
+    }
+
+    /**
+     * 删除对话
+     */
+    deleteChatSession(sessionId) {
+        this.chatSessions = this.chatSessions.filter(s => s.id !== sessionId);
+
+        // 如果删除的是当前对话，切换到第一个或创建新的
+        if (this.currentChatId === sessionId) {
+            this.currentChatId = null;
+            if (this.chatSessions.length > 0) {
+                this.switchChatSession(this.chatSessions[0].id);
+            } else {
+                this.createNewChat();
+            }
+        }
+
+        this.saveChatSessions();
+        this.renderChatHistoryList();
+    }
+
+    /**
+     * 保存当前对话到会话
+     */
+    saveCurrentChatSession() {
+        if (!this.currentChatId) return;
+
+        const session = this.chatSessions.find(s => s.id === this.currentChatId);
+        if (session) {
+            session.messages = this.chatHistory.slice(); // 复制消息
+            // 用第一条用户消息作为标题
+            const firstUserMsg = this.chatHistory.find(m => m.role === 'user');
+            if (firstUserMsg) {
+                session.title = firstUserMsg.content.substring(0, 20) + (firstUserMsg.content.length > 20 ? '...' : '');
+            }
+            this.saveChatSessions();
+        }
+    }
+
+    /**
+     * 渲染历史对话列表
+     */
+    renderChatHistoryList() {
+        if (!this.elements.chatHistoryList) return;
+
+        if (this.chatSessions.length === 0) {
+            this.elements.chatHistoryList.innerHTML = '<div class="empty-hint">暂无历史对话</div>';
+            return;
+        }
+
+        this.elements.chatHistoryList.innerHTML = this.chatSessions.map(session => `
+            <button class="chat-history-item ${session.id === this.currentChatId ? 'active' : ''}" data-id="${session.id}">
+                <span class="item-title">${session.title}</span>
+                <span class="item-delete" title="删除">×</span>
+            </button>
+        `).join('');
+    }
+
+    /**
+     * 从 localStorage 加载对话会话
+     */
+    loadChatSessions() {
+        try {
+            const saved = localStorage.getItem('chatSessions');
+            this.chatSessions = saved ? JSON.parse(saved) : [];
+        } catch {
+            this.chatSessions = [];
+        }
+    }
+
+    /**
+     * 保存对话会话到 localStorage
+     */
+    saveChatSessions() {
+        try {
+            // 只保留最近 20 个对话
+            const toSave = this.chatSessions.slice(0, 20);
+            localStorage.setItem('chatSessions', JSON.stringify(toSave));
+        } catch (e) {
+            console.error('保存对话失败:', e);
+        }
+    }
+
+    /**
+     * 发送聊天消息（流式响应）
+     */
+    async sendChatMessage() {
+        const message = this.elements.chatInput.value.trim();
+        if (!message) return;
+
+        // 清空输入
+        this.elements.chatInput.value = '';
+
+        // 添加用户消息到界面
+        this.addChatMessage('user', message);
+
+        // 添加到历史
+        this.chatHistory.push({ role: 'user', content: message });
+
+        // 禁用发送按钮
+        this.elements.chatSendBtn.disabled = true;
+
+        // 创建 AI 消息占位符
+        const aiMessageDiv = document.createElement('div');
+        aiMessageDiv.className = 'chat-message assistant streaming';
+        aiMessageDiv.textContent = '';
+        this.elements.chatMessages.appendChild(aiMessageDiv);
+
+        try {
+            // 调用 AI（流式响应）
+            const response = await this.dictionary.chat(this.chatHistory, (chunk, fullContent) => {
+                // 实时更新消息内容（流式时用纯文本，完成后渲染 markdown）
+                aiMessageDiv.textContent = fullContent;
+                this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+            });
+
+            // 完成后移除 streaming 类，并渲染 Markdown
+            aiMessageDiv.classList.remove('streaming');
+            aiMessageDiv.innerHTML = this.parseMarkdown(response);
+
+            // 添加到历史
+            this.chatHistory.push({ role: 'assistant', content: response });
+        } catch (error) {
+            aiMessageDiv.textContent = `错误: ${error.message}`;
+            aiMessageDiv.classList.remove('streaming');
+            aiMessageDiv.classList.add('error');
+        }
+
+        // 启用发送按钮
+        this.elements.chatSendBtn.disabled = false;
+
+        // 滚动到底部
+        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+    }
+
+    /**
+     * 添加聊天消息到界面
+     */
+    addChatMessage(role, content) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${role}`;
+
+        // AI 消息使用 Markdown 渲染
+        if (role === 'assistant') {
+            messageDiv.innerHTML = this.parseMarkdown(content);
+        } else {
+            messageDiv.textContent = content;
+        }
+
+        this.elements.chatMessages.appendChild(messageDiv);
+
+        // 滚动到底部
+        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+    }
+
+    /**
+     * 简单的 Markdown 解析器
+     */
+    parseMarkdown(text) {
+        if (!text) return '';
+
+        // 转义 HTML
+        let html = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        // 代码块 ```code```
+        html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+            return `<pre><code class="lang-${lang}">${code.trim()}</code></pre>`;
+        });
+
+        // 行内代码 `code`
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // 粗体 **text** 或 __text__
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+        // 斜体 *text* 或 _text_
+        html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+        // 标题 ### heading
+        html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+        html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+
+        // 列表 - item 或 * item
+        html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+        // 有序列表 1. item
+        html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+        // 分隔线 ---
+        html = html.replace(/^---+$/gm, '<hr>');
+
+        // 引用 > text
+        html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+
+        // 换行
+        html = html.replace(/\n/g, '<br>');
+
+        // 清理连续的 <br>
+        html = html.replace(/(<br>){3,}/g, '<br><br>');
+
+        return html;
+    }
+
+    /**
+     * 处理文件拖拽
+     */
+    handleFileDrop(files) {
+        for (const file of files) {
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) {
+                this.loadVideo(file);
+            } else if (['srt', 'vtt', 'ass', 'ssa', 'json'].includes(ext)) {
+                this.loadSubtitle(file);
+            }
+        }
+    }
+
+    /**
+     * 创建 Toast 容器
+     */
+    createToastContainer() {
+        const container = document.createElement('div');
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+        this.toastContainer = container;
+    }
+
+    /**
+     * 显示 Toast 消息
+     */
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+
+        this.toastContainer.appendChild(toast);
+
+        // 3秒后移除
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, 3000);
+    }
+
+    /**
+     * 标记视频完成观看
+     */
+    markVideoCompleted() {
+        if (!this.currentVideoName) {
+            this.showToast('请先加载视频', 'error');
+            return;
+        }
+
+        const count = this.statistics.markVideoCompleted(this.currentVideoName);
+        this.showToast(`🎉 已完成观看！累计完成 ${count} 个视频`, 'success');
+
+        // 添加完成动画效果
+        const btn = this.elements.completeBtn;
+        btn.classList.add('completed');
+        setTimeout(() => btn.classList.remove('completed'), 1000);
+    }
+
+    /**
+     * 打开统计弹窗
+     */
+    openStats() {
+        this.elements.statsModal.classList.remove('hidden');
+        this.updateStatsDisplay();
+    }
+
+    /**
+     * 关闭统计弹窗
+     */
+    closeStats() {
+        this.elements.statsModal.classList.add('hidden');
+    }
+
+    /**
+     * 更新统计显示
+     */
+    updateStatsDisplay() {
+        const summary = this.statistics.getSummary();
+
+        // 主要统计
+        this.elements.statTotalVideos.textContent = summary.completedVideos;
+        this.elements.statTotalTime.textContent = Statistics.formatDuration(summary.totalWatchTime);
+        this.elements.statVocabCount.textContent = this.vocabulary.totalCount;
+        this.elements.statStreak.textContent = summary.streak + ' 天';
+
+        // 今日统计
+        this.elements.statTodayTime.textContent = Statistics.formatDuration(summary.todayWatchTime);
+        this.elements.statWordLookups.textContent = summary.wordLookups + ' 次';
+        this.elements.statLearningDays.textContent = summary.learningDays + ' 天';
+
+        // 最近观看
+        this.renderRecentVideos();
+
+        // 成就
+        this.renderAchievements(summary);
+    }
+
+    /**
+     * 渲染最近观看的视频
+     */
+    renderRecentVideos() {
+        const videos = this.statistics.getRecentVideos(5);
+
+        if (videos.length === 0) {
+            this.elements.recentVideosList.innerHTML = '<p class="empty-hint">暂无观看记录</p>';
+            return;
+        }
+
+        const html = videos.map(video => {
+            const completedIcon = video.completed ? '✅' : '▶️';
+            const watchTime = Statistics.formatDuration(video.watchTime);
+            return `
+                <div class="recent-video-item">
+                    <span class="recent-video-icon">${completedIcon}</span>
+                    <div class="recent-video-info">
+                        <div class="recent-video-name">${video.name}</div>
+                        <div class="recent-video-meta">观看 ${watchTime}${video.completedCount > 0 ? ` · 完成 ${video.completedCount} 次` : ''}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        this.elements.recentVideosList.innerHTML = html;
+    }
+
+    /**
+     * 渲染成就
+     */
+    renderAchievements(summary) {
+        const achievements = [
+            { id: 'first_video', icon: '🎬', name: '初次观影', desc: '完成第一个视频', unlocked: summary.completedVideos >= 1 },
+            { id: 'five_videos', icon: '🎥', name: '视频达人', desc: '完成5个视频', unlocked: summary.completedVideos >= 5 },
+            { id: 'first_word', icon: '📝', name: '初学乍练', desc: '添加第一个生词', unlocked: this.vocabulary.totalCount >= 1 },
+            { id: 'ten_words', icon: '📚', name: '词汇收集者', desc: '添加10个生词', unlocked: this.vocabulary.totalCount >= 10 },
+            { id: 'fifty_words', icon: '🏆', name: '词汇大师', desc: '添加50个生词', unlocked: this.vocabulary.totalCount >= 50 },
+            { id: 'streak_3', icon: '🔥', name: '坚持不懈', desc: '连续学习3天', unlocked: summary.streak >= 3 },
+            { id: 'streak_7', icon: '💪', name: '一周坚持', desc: '连续学习7天', unlocked: summary.streak >= 7 },
+            { id: 'one_hour', icon: '⏰', name: '时光飞逝', desc: '累计观看1小时', unlocked: summary.totalWatchTime >= 3600 }
+        ];
+
+        const html = achievements.map(a => `
+            <div class="achievement ${a.unlocked ? 'unlocked' : 'locked'}">
+                <div class="achievement-icon">${a.icon}</div>
+                <div class="achievement-name">${a.name}</div>
+                <div class="achievement-desc">${a.desc}</div>
+            </div>
+        `).join('');
+
+        this.elements.achievementsList.innerHTML = html;
+    }
+
+    /**
+     * 跟踪观看时间（每5秒调用一次）
+     */
+    trackWatchTime() {
+        if (this.currentVideoName && this.player.isPlaying) {
+            this.statistics.addWatchTime(this.currentVideoName, 5);
+        }
+    }
+
+    /**
+     * 导出所有数据
+     */
+    exportData() {
+        try {
+            const result = this.dataManager.downloadAsJson();
+            if (result.success) {
+                this.showToast(`数据已导出到 ${result.filename}`, 'success');
+            }
+        } catch (error) {
+            console.error('导出数据失败:', error);
+            this.showToast('导出数据失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 导入数据
+     */
+    async importData() {
+        const confirmImport = window.confirm(
+            '导入数据将覆盖当前所有数据（生词本、学习统计、设置等）。\n\n确定要继续吗？'
+        );
+
+        if (!confirmImport) return;
+
+        try {
+            const result = await this.dataManager.importFromFile();
+
+            if (result.success) {
+                const exportDate = result.exportedAt
+                    ? new Date(result.exportedAt).toLocaleString('zh-CN')
+                    : '未知时间';
+
+                this.showToast(`${result.message}\n备份时间: ${exportDate}`, 'success');
+
+                // 提示刷新页面
+                setTimeout(() => {
+                    if (window.confirm('数据已导入，需要刷新页面以加载新数据。\n\n立即刷新？')) {
+                        window.location.reload();
+                    }
+                }, 500);
+            } else if (result.message !== '已取消') {
+                this.showToast(result.message, 'error');
+            }
+        } catch (error) {
+            console.error('导入数据失败:', error);
+            this.showToast('导入数据失败: ' + error.message, 'error');
+        }
+    }
+}
+
+// 初始化应用
+document.addEventListener('DOMContentLoaded', () => {
+    window.app = new App();
+});
